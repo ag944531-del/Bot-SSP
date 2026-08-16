@@ -195,6 +195,11 @@ model Guild {
   tempPermissions     TemporaryPermission[]
   tempSubstitutions   TemporarySubstitution[]
   securityIncidents   SecurityIncident[]
+  fivemLinks          FivemLink[]
+  fivemRankMappings   FivemRankMapping[]
+  fivemUnitMappings   FivemUnitMapping[]
+  fivemIntegrationLogs FivemIntegrationLog[]
+  integrationOperations IntegrationOperation[]
 
   @@map("guilds")
 }
@@ -282,6 +287,7 @@ model Rank {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   profiles       PoliceProfile[]
+  fivemRankMapping FivemRankMapping?
 
   @@unique([guildId, level])
   @@map("ranks")
@@ -298,6 +304,7 @@ model Unit {
   updatedAt    DateTime        @updatedAt
   profiles     PoliceProfile[]
   vehicles     Vehicle[]
+  fivemUnitMapping FivemUnitMapping?
 
   @@unique([guildId, abbreviation])
   @@map("units")
@@ -351,6 +358,7 @@ model PoliceProfile {
   medals            PoliceMedal[]
   certificates      Certificate[]
   instructorProfile InstructorProfile?
+  fivemLink         FivemLink?
 
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -1351,3 +1359,133 @@ model SecurityIncident {
   @@index([guildId, severity, status])
   @@map("security_incidents")
 }
+
+// ==========================================
+// 24. INTEGRAÇÃO FIVEM NATIVA (SECURITY BRIDGE)
+// ==========================================
+
+enum FivemFramework {
+  VRP
+  CREATIVE
+  QBCORE
+  ESX
+  CUSTOM
+  MOCK
+}
+
+enum SyncStatus {
+  SYNCED
+  PENDING
+  DIVERGENT
+  ERROR
+}
+
+enum OperationStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  PARTIAL_SUCCESS
+  FAILED
+  ROLLED_BACK
+  PENDING_SYNC
+}
+
+model FivemLink {
+  id              String         @id @default(uuid())
+  guildId         String
+  guild           Guild          @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  discordId       String         // Discord User ID
+  passport        Int            // Passaporte / User ID FiveM
+  characterId     String?        // ID do personagem
+  policeProfileId String?        @unique
+  policeProfile   PoliceProfile? @relation(fields: [policeProfileId], references: [id], onDelete: SetNull)
+  framework       FivemFramework @default(MOCK)
+  syncStatus      SyncStatus     @default(SYNCED)
+  lastSyncAt      DateTime?
+  divergenceNotes String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([guildId, discordId])
+  @@unique([guildId, passport])
+  @@index([guildId, passport])
+  @@index([guildId, discordId])
+  @@map("fivem_links")
+}
+
+model FivemRankMapping {
+  id             String   @id @default(uuid())
+  guildId        String
+  guild          Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  botRankId      String   @unique // ID do Rank interno
+  rank           Rank     @relation(fields: [botRankId], references: [id], onDelete: Cascade)
+  fivemGroup     String   // Nome do grupo/cargo no FiveM (ex: PoliciaSoldado, police.soldado)
+  discordRoleId  String?  // Cargo no Discord
+  hierarchyLevel Int      // Nível hierárquico
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([guildId, fivemGroup])
+  @@map("fivem_rank_mappings")
+}
+
+model FivemUnitMapping {
+  id            String   @id @default(uuid())
+  guildId       String
+  guild         Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  botUnitId     String   @unique // ID da Unit interna
+  unit          Unit     @relation(fields: [botUnitId], references: [id], onDelete: Cascade)
+  fivemGroup    String   // Nome do grupo no FiveM (ex: ROCAM, ROTA)
+  discordRoleId String?  // Cargo no Discord
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([guildId, fivemGroup])
+  @@map("fivem_unit_mappings")
+}
+
+model FivemIntegrationLog {
+  id          String   @id @default(uuid())
+  guildId     String
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  protocol    String   @unique // FIV-2026-000001
+  action      String   // ADD_POLICE, PROMOTE_POLICE, DEMOTE_POLICE, DISMISS_POLICE, SYNC
+  executorId  String   // Discord ID
+  discordId   String?  // Discord ID do alvo
+  passport    Int?     // Passaporte do alvo
+  endpoint    String
+  status      String   // SUCCESS, FAILED, TIMEOUT, CIRCUIT_BROKEN
+  statusCode  Int?
+  payload     String?  // JSON higienizado
+  response    String?  // JSON de resposta do bridge
+  error       String?
+  durationMs  Int?
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, action, createdAt])
+  @@index([guildId, passport])
+  @@map("fivem_integration_logs")
+}
+
+model IntegrationOperation {
+  id          String          @id @default(uuid())
+  guildId     String
+  guild       Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  operationId String          @unique // UUID ou PROTOCOLO
+  type        String          // HIRE, PROMOTE, DEMOTE, TRANSFER, DISMISS, SUSPEND, REINSTATE
+  passport    Int
+  discordId   String
+  status      OperationStatus @default(PENDING)
+  requestedBy String          // Discord ID
+  payload     String          // JSON
+  result      String?         // JSON
+  error       String?
+  attempts    Int             @default(0)
+  createdAt   DateTime        @default(now())
+  completedAt DateTime?
+
+  @@index([guildId, status])
+  @@index([guildId, passport])
+  @@map("integration_operations")
+}
+

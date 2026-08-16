@@ -3,6 +3,7 @@ import { PoliceStatus, Prisma } from '@prisma/client';
 import { prisma } from '../database/prisma.js';
 import { ProtocolGenerator } from '../utils/protocolGenerator.js';
 import { AuditLogService } from './AuditLogService.js';
+import { FiveMIntegrationService } from './FiveMIntegrationService.js';
 import { logger } from '../utils/logger.js';
 
 export interface PromotionOptions {
@@ -46,7 +47,7 @@ export interface DismissalOptions {
 
 export class RHService {
   /**
-   * Promove um policial, ajustando cargos no Discord e gravando histórico funcional
+   * Promove um policial, ajustando cargos no Discord, FiveM e gravando histórico funcional
    */
   public static async promotePolice(options: PromotionOptions) {
     const { guild, authorMember, targetUserId, newRankId, reason } = options;
@@ -83,7 +84,25 @@ export class RHService {
       }
     }
 
-    // 2. Transação no Banco de Dados
+    // 2. Sincronizar com FiveM se houver vínculo
+    const fivemLink = await prisma.fivemLink.findUnique({
+      where: { guildId_discordId: { guildId: guild.id, discordId: targetUserId } }
+    });
+
+    let fivemResult = null;
+    if (fivemLink) {
+      fivemResult = await FiveMIntegrationService.syncRankChange({
+        guildId: guild.id,
+        passport: fivemLink.passport,
+        discordId: targetUserId,
+        oldRankId: profile.rankId || undefined,
+        newRankId: newRank.id,
+        executorId: authorMember.id,
+        actionType: 'PROMOTE'
+      });
+    }
+
+    // 3. Transação no Banco de Dados
     const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const updatedProfile = await tx.policeProfile.update({
         where: { id: profile.id },
@@ -107,22 +126,22 @@ export class RHService {
       return { updatedProfile, history };
     });
 
-    // 3. Auditoria
+    // 4. Auditoria
     await AuditLogService.logAction({
       guildId: guild.id,
       executorId: authorMember.id,
       targetId: targetUserId,
       action: 'RH_PROMOVER',
       protocol,
-      details: `Promoção: ${previousRankName} ➔ ${newRank.name}. Motivo: ${reason}`,
+      details: `Promoção: ${previousRankName} ➔ ${newRank.name}. FiveM: ${fivemResult?.status || 'Sem Vínculo'}. Motivo: ${reason}`,
       client: guild.client
     });
 
-    return { protocol, previousRank: previousRankName, newRank: newRank.name };
+    return { protocol, previousRank: previousRankName, newRank: newRank.name, fivemResult };
   }
 
   /**
-   * Rebaixa um policial, ajustando cargos no Discord e gravando histórico
+   * Rebaixa um policial, ajustando cargos no Discord, FiveM e gravando histórico
    */
   public static async demotePolice(options: DemotionOptions) {
     const { guild, authorMember, targetUserId, newRankId, reason } = options;
@@ -155,6 +174,24 @@ export class RHService {
       }
     }
 
+    // Sincronizar FiveM
+    const fivemLink = await prisma.fivemLink.findUnique({
+      where: { guildId_discordId: { guildId: guild.id, discordId: targetUserId } }
+    });
+
+    let fivemResult = null;
+    if (fivemLink) {
+      fivemResult = await FiveMIntegrationService.syncRankChange({
+        guildId: guild.id,
+        passport: fivemLink.passport,
+        discordId: targetUserId,
+        oldRankId: profile.rankId || undefined,
+        newRankId: newRank.id,
+        executorId: authorMember.id,
+        actionType: 'DEMOTE'
+      });
+    }
+
     // Transação no Banco
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.policeProfile.update({
@@ -180,11 +217,11 @@ export class RHService {
       targetId: targetUserId,
       action: 'RH_REBAIXAR',
       protocol,
-      details: `Rebaixamento: ${previousRankName} ➔ ${newRank.name}. Motivo: ${reason}`,
+      details: `Rebaixamento: ${previousRankName} ➔ ${newRank.name}. FiveM: ${fivemResult?.status || 'Sem Vínculo'}. Motivo: ${reason}`,
       client: guild.client
     });
 
-    return { protocol, previousRank: previousRankName, newRank: newRank.name };
+    return { protocol, previousRank: previousRankName, newRank: newRank.name, fivemResult };
   }
 
   /**
@@ -220,6 +257,23 @@ export class RHService {
       }
     }
 
+    // Sincronizar FiveM
+    const fivemLink = await prisma.fivemLink.findUnique({
+      where: { guildId_discordId: { guildId: guild.id, discordId: targetUserId } }
+    });
+
+    let fivemResult = null;
+    if (fivemLink) {
+      fivemResult = await FiveMIntegrationService.syncTransfer({
+        guildId: guild.id,
+        passport: fivemLink.passport,
+        discordId: targetUserId,
+        oldUnitId: profile.unitId || undefined,
+        newUnitId: newUnit.id,
+        executorId: authorMember.id
+      });
+    }
+
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.policeProfile.update({
         where: { id: profile.id },
@@ -244,11 +298,11 @@ export class RHService {
       targetId: targetUserId,
       action: 'RH_TRANSFERIR',
       protocol,
-      details: `Transferência: ${previousUnitName} ➔ ${newUnit.name}. Motivo: ${reason}`,
+      details: `Transferência: ${previousUnitName} ➔ ${newUnit.name}. FiveM: ${fivemResult?.status || 'Sem Vínculo'}. Motivo: ${reason}`,
       client: guild.client
     });
 
-    return { protocol, previousUnit: previousUnitName, newUnit: newUnit.name };
+    return { protocol, previousUnit: previousUnitName, newUnit: newUnit.name, fivemResult };
   }
 
   /**
@@ -285,8 +339,8 @@ export class RHService {
   }
 
   /**
-   * Exoneração protegida de policial: remove cargos, encerra pontos e viaturas ativas,
-   * altera status para EXONERADO e preserva todo o histórico.
+   * Exoneração sincronizada de policial: remove cargos no Discord, grupos no FiveM,
+   * encerra pontos e viaturas ativas, altera status para EXONERADO e preserva todo o histórico.
    */
   public static async dismissPolice(options: DismissalOptions) {
     const { guild, authorMember, targetUserId, reason } = options;
@@ -320,15 +374,30 @@ export class RHService {
       }
     }
 
-    // 2. Transação no Banco: encerra pontos ativos e grava histórico de exoneração
+    // 2. Sincronizar exoneração no FiveM
+    const fivemLink = await prisma.fivemLink.findUnique({
+      where: { guildId_discordId: { guildId: guild.id, discordId: targetUserId } }
+    });
+
+    let fivemResult = null;
+    if (fivemLink) {
+      fivemResult = await FiveMIntegrationService.syncDismissal({
+        guildId: guild.id,
+        passport: fivemLink.passport,
+        discordId: targetUserId,
+        currentRankId: profile.rankId || undefined,
+        currentUnitId: profile.unitId || undefined,
+        executorId: authorMember.id
+      });
+    }
+
+    // 3. Transação no Banco: encerra pontos ativos e grava histórico de exoneração
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Encerrar pontos ativos
       await tx.dutySession.updateMany({
         where: { profileId: profile.id, isActive: true },
         data: { isActive: false, endTime: new Date() }
       });
 
-      // Atualizar status do perfil para EXONERADO
       await tx.policeProfile.update({
         where: { id: profile.id },
         data: {
@@ -338,7 +407,6 @@ export class RHService {
         }
       });
 
-      // Registrar histórico permanente
       await tx.dismissalHistory.create({
         data: {
           profileId: profile.id,
@@ -349,18 +417,18 @@ export class RHService {
       });
     });
 
-    // 3. Log de Auditoria
+    // 4. Log de Auditoria
     await AuditLogService.logAction({
       guildId: guild.id,
       executorId: authorMember.id,
       targetId: targetUserId,
       action: 'RH_EXONERAR',
       protocol,
-      details: `Exoneração de ${profile.operationalName} (Matrícula: ${profile.badgeNumber}). Motivo: ${reason}`,
+      details: `Exoneração de ${profile.operationalName} (Matrícula: ${profile.badgeNumber}). FiveM: ${fivemResult?.status || 'Sem Vínculo'}. Motivo: ${reason}`,
       client: guild.client
     });
 
-    return { protocol, badgeNumber: profile.badgeNumber, operationalName: profile.operationalName };
+    return { protocol, badgeNumber: profile.badgeNumber, operationalName: profile.operationalName, fivemResult };
   }
 
   /**
@@ -372,6 +440,7 @@ export class RHService {
       include: {
         rank: true,
         unit: true,
+        fivemLink: true,
         promotions: { orderBy: { createdAt: 'desc' } },
         demotions: { orderBy: { createdAt: 'desc' } },
         transfers: { orderBy: { createdAt: 'desc' } },
