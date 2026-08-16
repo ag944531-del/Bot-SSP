@@ -1,9 +1,9 @@
-import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, REST, Routes } from 'discord.js';
 import { ENV } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { connectDatabase, prisma } from './database/prisma.js';
 import { loadEvents } from './handlers/eventHandler.js';
-import { loadCommands } from './handlers/commandHandler.js';
+import { loadCommands, commands } from './handlers/commandHandler.js';
 import { loadInteractions } from './handlers/interactionHandler.js';
 import { startApiServer } from './api/server.js';
 
@@ -53,7 +53,32 @@ async function bootstrap() {
   await loadInteractions();
   await loadEvents(client);
 
-  // 4. Autenticação no Discord
+  // 4. Registro Automático de Comandos Slash na API do Discord
+  if (ENV.DISCORD_TOKEN && ENV.DISCORD_CLIENT_ID) {
+    try {
+      const rest = new REST({ version: '10' }).setToken(ENV.DISCORD_TOKEN);
+      const commandData = Array.from(commands.values()).map((cmd) => cmd.data.toJSON());
+      logger.info(`📡 Registrando ${commandData.length} comandos Slash na API do Discord...`);
+
+      if (ENV.DISCORD_GUILD_ID) {
+        await rest.put(
+          Routes.applicationGuildCommands(ENV.DISCORD_CLIENT_ID, ENV.DISCORD_GUILD_ID),
+          { body: commandData }
+        );
+        logger.info(`✅ Comandos registrados instantaneamente no servidor (Guild: ${ENV.DISCORD_GUILD_ID})!`);
+      } else {
+        await rest.put(
+          Routes.applicationCommands(ENV.DISCORD_CLIENT_ID),
+          { body: commandData }
+        );
+        logger.info('✅ Comandos registrados globalmente na API do Discord!');
+      }
+    } catch (err) {
+      logger.warn('Aviso no registro automático de comandos slash:', err);
+    }
+  }
+
+  // 5. Autenticação no Discord
   if (!ENV.DISCORD_TOKEN) {
     logger.warn('⚠️ DISCORD_TOKEN não configurado no .env. O Dashboard Web e API permanecerão ativos.');
     return;
