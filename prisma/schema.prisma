@@ -1,0 +1,1353 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// ENUMS DO SISTEMA
+// ==========================================
+
+enum PoliceStatus {
+  ATIVO
+  AFASTADO
+  FERIAS
+  LICENCIADO
+  SUSPENSO
+  EXONERADO
+}
+
+enum VehicleStatus {
+  DISPONIVEL
+  EM_PATRULHAMENTO
+  MANUTENCAO
+  APREENDIDA
+  INDISPONIVEL
+}
+
+enum CopomStatus {
+  DISPONIVEL
+  PATRULHAMENTO
+  DESLOCAMENTO
+  EM_OCORRENCIA
+  ACOMPANHAMENTO
+  CODIGO_VERMELHO
+  RETORNO_A_BASE
+  INDISPONIVEL
+}
+
+enum AbsenceStatus {
+  PENDENTE
+  APROVADA
+  REJEITADA
+  FINALIZADA
+}
+
+enum CaseStatus {
+  INSTAURADO
+  EM_INVESTIGACAO
+  AGUARDANDO_DEFESA
+  EM_ANALISE
+  CONCLUIDO
+  ARQUIVADO
+}
+
+enum SanctionType {
+  ABSOLVICAO
+  ADVERTENCIA
+  SUSPENSAO
+  REBAIXAMENTO
+  EXONERACAO
+  ENCAMINHAMENTO
+}
+
+enum TicketStatus {
+  ABERTO
+  EM_ATENDIMENTO
+  FECHADO
+  ARQUIVADO
+}
+
+enum SuggestionStatus {
+  PENDENTE
+  APROVADA
+  REJEITADA
+  ARQUIVADA
+}
+
+// Enums da Governança, Workflows e Escalas (Fase 8)
+enum ApprovalStatus {
+  PENDENTE
+  EM_ANALISE
+  APROVADO
+  REJEITADO
+  CANCELADO
+  CORRECAO_SOLICITADA
+}
+
+enum ApprovalActionType {
+  APROVAR
+  REJEITAR
+  SOLICITAR_CORRECAO
+  CANCELAR
+}
+
+enum DocumentType {
+  FICHA_FUNCIONAL
+  RELATORIO_OCORRENCIA
+  RELATORIO_PRISAO
+  RELATORIO_APREENSAO
+  BOLETIM_GERAL
+  BOLETIM_INTERNO
+  RESULTADO_IPM
+  RESULTADO_PDO
+  CONVOCACAO
+  CERTIFICADO
+  MEDALHA
+  HISTORICO_POLICIAL
+  RELATORIO_OPERACIONAL
+  RELATORIO_ESTATISTICO
+  ESCALA_SERVICO
+}
+
+enum ShiftStatus {
+  PROGRAMADO
+  CONFIRMADO
+  PRESENTE
+  AUSENTE
+  JUSTIFICADO
+}
+
+enum AlertCategory {
+  ADMINISTRATIVO
+  OPERACIONAL
+  CORREGEDORIA
+  ACADEMIA
+  SISTEMA
+}
+
+enum AlertStatus {
+  NOVO
+  VISUALIZADO
+  RESOLVIDO
+  IGNORADO
+}
+
+enum DeadlineStatus {
+  NORMAL
+  ATENCAO
+  URGENTE
+  VENCIDO
+}
+
+// Enums de Segurança e Continuidade (Fase 9)
+enum BlacklistStatus {
+  BLOQUEADO
+  SUSPENSO
+  EXONERADO
+  IMPEDIDO
+  INVESTIGADO
+}
+
+enum IncidentSeverity {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum IncidentStatus {
+  ABERTO
+  INVESTIGANDO
+  RESOLVIDO
+  FALSO_POSITIVO
+}
+
+// ==========================================
+// 1. CONFIGURAÇÕES POR SERVIDOR (GUILD)
+// ==========================================
+
+model Guild {
+  id                  String        @id // Discord Guild ID
+  name                String
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  settings            GuildSettings?
+  ranks               Rank[]
+  units               Unit[]
+  profiles            PoliceProfile[]
+  vehicles            Vehicle[]
+  logs                AuditLog[]
+  workflows           ApprovalWorkflow[]
+  approvalRequests    ApprovalRequest[]
+  documents           Document[]
+  shifts              Shift[]
+  alerts              SystemAlert[]
+  deadlines           DeadlineRecord[]
+  goals               SystemGoal[]
+  evidenceAttachments EvidenceAttachment[]
+  configHistories     ConfigurationHistory[]
+  recordVersions      RecordVersion[]
+  blacklists          BlacklistRecord[]
+  tempPermissions     TemporaryPermission[]
+  tempSubstitutions   TemporarySubstitution[]
+  securityIncidents   SecurityIncident[]
+
+  @@map("guilds")
+}
+
+model GuildSettings {
+  id                    String   @id @default(uuid())
+  guildId               String   @unique
+  guild                 Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  // Instituição
+  institutionName       String?  @default("Polícia Militar / Segurança Pública")
+  institutionInitials   String?  @default("SSP")
+  institutionLogoUrl    String?
+
+  // Cargos de Gestão / Setoriais
+  adminRoleId           String?
+  rhRoleId              String?
+  corregedoriaRoleId    String?
+  copomRoleId           String?
+  academyRoleId         String?
+  officerRoleId         String?
+
+  // Canais de Notificações e Auditoria
+  logsChannelId         String?
+  auditChannelId        String?
+  alertsChannelId       String?
+  bulletinChannelId     String?
+  internalBulletinChannelId String?
+  arrestsChannelId      String?
+  finesChannelId        String?
+  occurrencesChannelId  String?
+  suggestionsChannelId  String?
+  communicationChannelId String?
+  dutyChannelId         String?
+  copomChannelId        String?
+  shiftsChannelId       String?
+  ticketsCategoryId     String?
+
+  // Governança e Automações
+  autoBackupEnabled     Boolean  @default(true)
+  backupRetentionDays   Int      @default(30)
+  multiStepApproval     Boolean  @default(true)
+  antiAbuseEnabled      Boolean  @default(true)
+  emergencyMode         Boolean  @default(false)
+  maintenanceMode       Boolean  @default(false)
+  emergencyReason       String?
+  emergencyActivatedBy  String?
+  maintenanceReason     String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("guild_settings")
+}
+
+// ==========================================
+// 2. SISTEMA DE PERMISSÕES & CARGOS INTERNOS
+// ==========================================
+
+model RolePermission {
+  id           String   @id @default(uuid())
+  guildId      String
+  roleId       String   // Discord Role ID
+  permission   String   // Ex: RH.PROMOVER, COPOM.CRIAR_VIATURA
+  grantedBy    String   // Discord ID do usuário que concedeu
+  createdAt    DateTime @default(now())
+
+  @@unique([guildId, roleId, permission])
+  @@map("role_permissions")
+}
+
+// ==========================================
+// 3. HIERARQUIA, UNIDADES E CADASTRO POLICIAL
+// ==========================================
+
+model Rank {
+  id             String          @id @default(uuid())
+  guildId        String
+  guild          Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name           String          // Ex: Soldado, Coronel
+  abbreviation   String?         // Ex: Cel, Sd
+  level          Int             // Quanto maior, maior a autoridade
+  discordRoleId  String?         // Cargo correspondente no Discord
+  sector         String?         // Setor (Comando Geral, Operacional, etc.)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  profiles       PoliceProfile[]
+
+  @@unique([guildId, level])
+  @@map("ranks")
+}
+
+model Unit {
+  id           String          @id @default(uuid())
+  guildId      String
+  guild        Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name         String          // Ex: ROTA, BAEP, Policiamento de Choque
+  abbreviation String          // Ex: ROTA, BAEP
+  discordRoleId String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  profiles     PoliceProfile[]
+  vehicles     Vehicle[]
+
+  @@unique([guildId, abbreviation])
+  @@map("units")
+}
+
+model PoliceProfile {
+  id                String          @id @default(uuid())
+  guildId           String
+  guild             Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  userId            String          // Discord User ID
+  name              String          // Nome real/completo
+  operationalName   String          // Nome de guerra
+  badgeNumber       String          // Matrícula funcional
+  passportId        String?         // Passaporte / ID In-Game
+  status            PoliceStatus    @default(ATIVO)
+  
+  rankId            String?
+  rank              Rank?           @relation(fields: [rankId], references: [id], onDelete: SetNull)
+  
+  unitId            String?
+  unit              Unit?           @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  
+  subunit           String?
+  supervisorId      String?         // Discord ID do superior direto
+  notes             String?
+  
+  hireDate          DateTime        @default(now())
+  lastPromotionDate DateTime?
+
+  // Estatísticas e Acúmulos
+  totalDutyMinutes  Int             @default(0)
+  totalPatrols      Int             @default(0)
+  totalArrests      Int             @default(0)
+  totalFines        Int             @default(0)
+  totalOccurrences  Int             @default(0)
+  totalOperations   Int             @default(0)
+
+  // Soft Delete
+  deletedAt         DateTime?
+  deletedBy         String?
+  archiveReason     String?
+
+  // Relacionamentos Funcionais
+  promotions        PromotionHistory[]
+  demotions         DemotionHistory[]
+  transfers         TransferHistory[]
+  dismissals        DismissalHistory[]
+  absences          AbsenceRecord[]
+  dutySessions      DutySession[]
+  patrolsAsMember   PatrolMember[]
+  medals            PoliceMedal[]
+  certificates      Certificate[]
+  instructorProfile InstructorProfile?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([guildId, userId])
+  @@unique([guildId, badgeNumber])
+  @@index([guildId, userId])
+  @@map("police_profiles")
+}
+
+// ==========================================
+// 4. HISTÓRICOS FUNCIONAIS (RH & AUDITORIA)
+// ==========================================
+
+model PromotionHistory {
+  id           String        @id @default(uuid())
+  profileId    String
+  profile      PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  previousRank String
+  newRank      String
+  reason       String
+  authorId     String        // Discord ID
+  protocol     String        @unique
+  createdAt    DateTime      @default(now())
+
+  @@map("promotion_history")
+}
+
+model DemotionHistory {
+  id           String        @id @default(uuid())
+  profileId    String
+  profile      PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  previousRank String
+  newRank      String
+  reason       String
+  authorId     String
+  protocol     String        @unique
+  createdAt    DateTime      @default(now())
+
+  @@map("demotion_history")
+}
+
+model TransferHistory {
+  id           String        @id @default(uuid())
+  profileId    String
+  profile      PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  previousUnit String
+  newUnit      String
+  reason       String
+  authorId     String
+  protocol     String        @unique
+  createdAt    DateTime      @default(now())
+
+  @@map("transfer_history")
+}
+
+model DismissalHistory {
+  id           String        @id @default(uuid())
+  profileId    String
+  profile      PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  reason       String
+  authorId     String
+  protocol     String        @unique
+  createdAt    DateTime      @default(now())
+
+  @@map("dismissal_history")
+}
+
+model AbsenceRecord {
+  id           String        @id @default(uuid())
+  profileId    String
+  profile      PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  reason       String
+  startDate    DateTime
+  endDate      DateTime
+  notes        String?
+  proofUrl     String?
+  status       AbsenceStatus @default(PENDENTE)
+  approvedBy   String?
+  protocol     String        @unique
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("absence_records")
+}
+
+// ==========================================
+// 5. CONTROLE DE PONTO & PATRULHAMENTO
+// ==========================================
+
+model DutySession {
+  id           String        @id @default(uuid())
+  profileId    String
+  profile      PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  guildId      String
+  startTime    DateTime      @default(now())
+  endTime      DateTime?
+  durationMin  Int?
+  isActive     Boolean       @default(true)
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([profileId, isActive])
+  @@map("duty_sessions")
+}
+
+model Patrol {
+  id           String         @id @default(uuid())
+  guildId      String
+  prefix       String         // Prefixo da Viatura (ex: CG-01)
+  vehicleModel String?
+  commanderId  String         // Discord ID
+  driverId     String?        // Discord ID
+  area         String?
+  notes        String?
+  startTime    DateTime       @default(now())
+  endTime      DateTime?
+  durationMin  Int?
+  isActive     Boolean        @default(true)
+  copomStatus  CopomStatus    @default(DISPONIVEL)
+  members      PatrolMember[]
+
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([guildId, isActive])
+  @@map("patrols")
+}
+
+model PatrolMember {
+  id        String        @id @default(uuid())
+  patrolId  String
+  patrol    Patrol        @relation(fields: [patrolId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime      @default(now())
+  leftAt    DateTime?
+
+  @@map("patrol_members")
+}
+
+// ==========================================
+// 6. GERENCIAMENTO DE VIATURAS
+// ==========================================
+
+model Vehicle {
+  id            String        @id @default(uuid())
+  guildId       String
+  guild         Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  model         String
+  prefix        String
+  plate         String
+  unitId        String?
+  unit          Unit?         @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  status        VehicleStatus @default(DISPONIVEL)
+  notes         String?
+  deletedAt     DateTime?
+  deletedBy     String?
+  archiveReason String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([guildId, prefix])
+  @@map("vehicles")
+}
+
+// ==========================================
+// 7. PRISÕES, MULTAS, APREENSÕES, OCORRÊNCIAS & OPERAÇÕES
+// ==========================================
+
+model Arrest {
+  id             String   @id @default(uuid())
+  guildId        String
+  protocol       String   @unique // PR-2026-000001
+  suspectName    String
+  passportId     String?
+  articles       String   // Artigos penais infringidos
+  penaltyMonths  Int      // Pena em meses
+  fineAmount     Decimal  @default(0) @db.Decimal(12, 2)
+  officerId      String   // Discord ID do policial responsável
+  vehiclePrefix  String?
+  location       String
+  narrative      String
+  proofUrl       String?
+  notes          String?
+  deletedAt      DateTime?
+  deletedBy      String?
+  archiveReason  String?
+  createdAt      DateTime @default(now())
+
+  @@map("arrests")
+}
+
+model Fine {
+  id            String   @id @default(uuid())
+  guildId       String
+  protocol      String   @unique // MT-2026-000001
+  citizenName   String
+  documentId    String?
+  infraction    String
+  article       String
+  amount        Decimal  @db.Decimal(12, 2)
+  officerId     String
+  vehiclePlate  String?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  @@map("fines")
+}
+
+model Seizure {
+  id         String        @id @default(uuid())
+  guildId    String
+  protocol   String        @unique // AP-2026-000001
+  officerId  String
+  location   String
+  notes      String?
+  items      SeizureItem[]
+  createdAt  DateTime      @default(now())
+
+  @@map("seizures")
+}
+
+model SeizureItem {
+  id        String   @id @default(uuid())
+  seizureId String
+  seizure   Seizure  @relation(fields: [seizureId], references: [id], onDelete: Cascade)
+  category  String   // Armas, Munições, Drogas, Dinheiro, Veículos, Objetos, Documentos
+  name      String
+  quantity  Int
+  details   String?
+
+  @@map("seizure_items")
+}
+
+model Occurrence {
+  id            String   @id @default(uuid())
+  guildId       String
+  protocol      String   @unique // OC-2026-000001
+  type          String   // Roubo, Homicídio, Tráfico, etc.
+  location      String
+  involved      String   // Envolvidos / Vítimas / Suspeitos
+  officers      String   // Policiais participantes
+  vehicles      String?  // Viaturas empregadas
+  narrative     String
+  result        String
+  proofUrl      String?
+  notes         String?
+  authorId      String
+  deletedAt     DateTime?
+  deletedBy     String?
+  archiveReason String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("occurrences")
+}
+
+model PoliceOperation {
+  id           String   @id @default(uuid())
+  guildId      String
+  protocol     String   @unique // OP-2026-000001
+  name         String
+  commanderId  String
+  unitName     String
+  officers     String
+  vehicles     String
+  planning     String
+  objective    String
+  result       String
+  arrestsCount Int      @default(0)
+  seizuresInfo String?
+  casualties   String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  @@map("police_operations")
+}
+
+// ==========================================
+// 8. TICKETS & ATENDIMENTO
+// ==========================================
+
+model Ticket {
+  id           String          @id @default(uuid())
+  guildId      String
+  protocol     String          @unique // TK-2026-000001
+  channelId    String          @unique
+  authorId     String
+  category     String          // RH, Corregedoria, Escola, Denúncia, etc.
+  status       TicketStatus    @default(ABERTO)
+  claimedById  String?
+  closedById   String?
+  closeReason  String?
+  closedAt     DateTime?
+  transcriptUrl String?
+  messages     TicketMessage[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id          String   @id @default(uuid())
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId    String
+  authorName  String
+  content     String
+  attachments String?
+  sentAt      DateTime @default(now())
+
+  @@map("ticket_messages")
+}
+
+// ==========================================
+// 9. BOLETINS & COMUNICAÇÃO SOCIAL
+// ==========================================
+
+model Bulletin {
+  id        String   @id @default(uuid())
+  guildId   String
+  number    String   // Ex: BG Nº 047/2026 ou BI Nº 012/2026
+  isInternal Boolean  @default(false)
+  title     String
+  content   String
+  authorId  String
+  createdAt DateTime @default(now())
+
+  @@map("bulletins")
+}
+
+// ==========================================
+// 10. CORREGEDORIA (IPM, PDO, SANÇÕES & CONVOCAÇÕES)
+// ==========================================
+
+model CorregedoriaCase {
+  id            String        @id @default(uuid())
+  guildId       String
+  protocol      String        @unique // IPM-2026-000001 ou PDO-2026-000001
+  type          String        // IPM ou PDO
+  investigatedId String       // Discord ID do investigado
+  accuserId     String?       // Denunciante
+  officerInChargeId String    // Encarregado
+  reporterId    String?       // Relator
+  factNarrative String
+  evidence      String?
+  witnesses     String?
+  deadline      DateTime?
+  status        CaseStatus    @default(INSTAURADO)
+  resultSanction SanctionType?
+  resultNotes   String?
+  deletedAt     DateTime?
+  deletedBy     String?
+  archiveReason String?
+  sanctions     Sanction[]
+  summons       Summons[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("corregedoria_cases")
+}
+
+model Summons {
+  id           String           @id @default(uuid())
+  caseId       String?
+  case         CorregedoriaCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  guildId      String
+  summonedId   String           // Policial convocado
+  authorId     String           // Autoridade convocante
+  reason       String
+  scheduledFor DateTime
+  location     String           // Canal ou local presencial
+  confirmed    Boolean?
+  justification String?
+  protocol     String           @unique
+  createdAt    DateTime         @default(now())
+
+  @@map("summons")
+}
+
+model Sanction {
+  id           String           @id @default(uuid())
+  caseId       String?
+  case         CorregedoriaCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  guildId      String
+  profileId    String           // Policial penalizado
+  type         SanctionType
+  reason       String
+  daysSuspended Int?
+  authorId     String
+  protocol     String           @unique
+  createdAt    DateTime         @default(now())
+
+  @@map("sanctions")
+}
+
+// ==========================================
+// 11. ESCOLA DE FORMAÇÃO & CURSOS
+// ==========================================
+
+model Course {
+  id            String         @id @default(uuid())
+  guildId       String
+  name          String         // Ex: Curso de Formação de Sargentos
+  abbreviation  String         // Ex: CFS
+  description   String
+  workloadHours Int
+  unitInCharge  String?
+  prerequisites String?
+  vacancies     Int            @default(20)
+  isActive      Boolean        @default(true)
+  deletedAt     DateTime?
+  deletedBy     String?
+  archiveReason String?
+  classes       CourseClass[]
+  createdAt     DateTime       @default(now())
+
+  @@map("courses")
+}
+
+model CourseClass {
+  id          String              @id @default(uuid())
+  courseId    String
+  course      Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  code        String              // Ex: CFS-2026/1
+  startDate   DateTime
+  endDate     DateTime?
+  isOpen      Boolean             @default(true)
+  students    StudentEnrollment[]
+  createdAt   DateTime            @default(now())
+
+  @@map("course_classes")
+}
+
+model StudentEnrollment {
+  id           String        @id @default(uuid())
+  classId      String
+  class        CourseClass   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  studentId    String        // Discord ID
+  passed       Boolean?
+  finalGrade   Decimal?      @db.Decimal(4, 2)
+  notes        String?
+  enrolledAt   DateTime      @default(now())
+
+  @@map("student_enrollments")
+}
+
+model InstructorProfile {
+  id             String        @id @default(uuid())
+  profileId      String        @unique
+  profile        PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  coursesTaught  Int           @default(0)
+  studentsTotal  Int           @default(0)
+  approvedTotal  Int           @default(0)
+  rejectedTotal  Int           @default(0)
+  workloadTaught Int           @default(0) // horas ministradas
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@map("instructor_profiles")
+}
+
+model Certificate {
+  id          String        @id @default(uuid())
+  profileId   String
+  profile     PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  courseName  String
+  issueDate   DateTime      @default(now())
+  code        String        @unique // CERT-2026-000001
+  issuerId    String
+
+  @@map("certificates")
+}
+
+// ==========================================
+// 12. DEJEM & SERVIÇO EXTRAORDINÁRIO
+// ==========================================
+
+model DejemSession {
+  id           String        @id @default(uuid())
+  guildId      String
+  date         DateTime
+  startTime    String        // Ex: "08:00"
+  endTime      String        // Ex: "16:00"
+  vacancies    Int
+  unitName     String
+  requirements String?
+  creatorId    String
+  members      DejemMember[]
+  createdAt    DateTime      @default(now())
+
+  @@map("dejem_sessions")
+}
+
+model DejemMember {
+  id        String       @id @default(uuid())
+  dejemId   String
+  dejem     DejemSession @relation(fields: [dejemId], references: [id], onDelete: Cascade)
+  userId    String       // Discord ID
+  present   Boolean      @default(false)
+  joinedAt  DateTime     @default(now())
+
+  @@unique([dejemId, userId])
+  @@map("dejem_members")
+}
+
+// ==========================================
+// 13. MEDALHAS & CONDECORAÇÕES
+// ==========================================
+
+model Medal {
+  id          String        @id @default(uuid())
+  guildId     String
+  name        String
+  description String
+  imageUrl    String?
+  category    String        // Bravura, Mérito, Tempo de Serviço, etc.
+  createdAt   DateTime      @default(now())
+  holders     PoliceMedal[]
+
+  @@map("medals")
+}
+
+model PoliceMedal {
+  id        String        @id @default(uuid())
+  medalId   String
+  medal     Medal         @relation(fields: [medalId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   PoliceProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  grantedBy String        // Discord ID
+  reason    String
+  grantedAt DateTime      @default(now())
+
+  @@map("police_medals")
+}
+
+// ==========================================
+// 14. SUGESTÕES COMUNITÁRIAS
+// ==========================================
+
+model Suggestion {
+  id          String           @id @default(uuid())
+  guildId     String
+  protocol    String           @unique // SUG-2026-000001
+  authorId    String
+  content     String
+  status      SuggestionStatus @default(PENDENTE)
+  upvotes     Int              @default(0)
+  downvotes   Int              @default(0)
+  messageId   String?          @unique
+  reviewedBy  String?
+  reviewNotes String?
+  votes       SuggestionVote[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("suggestions")
+}
+
+model SuggestionVote {
+  id           String     @id @default(uuid())
+  suggestionId String
+  suggestion   Suggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+  userId       String
+  isUpvote     Boolean
+
+  @@unique([suggestionId, userId])
+  @@map("suggestion_votes")
+}
+
+// ==========================================
+// 15. AUDITORIA AVANÇADA & RASTREABILIDADE
+// ==========================================
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  guildId         String
+  guild           Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  executorId      String   // Discord ID
+  executorName    String?  // Nome completo / Guerra
+  executorRole    String?  // Cargo funcional / Patente
+  action          String   // Ex: PROMOVER, EXONERAR, WORKFLOW_APROVAR
+  module          String?  // RH, COPOM, CORREGEDORIA, ACADEMIA, SEGURANCA
+  entityType      String?  // PoliceProfile, Occurrence, IPM, etc.
+  entityId        String?  // ID ou Matrícula da entidade
+  previousValue   String?  // Valor anterior formatado ou JSON
+  newValue        String?  // Novo valor formatado ou JSON
+  reason          String?  // Motivo da alteração
+  protocol        String?  // Protocolo AUD- ou de negócio
+  channelId       String?  // ID do canal do Discord
+  interactionType String?  // SLASH_COMMAND, BUTTON, MODAL
+  details         String?  // Contexto adicional em JSON
+  targetId        String?  // Alvo da ação
+  createdAt       DateTime @default(now())
+
+  @@index([guildId, action])
+  @@index([executorId])
+  @@index([protocol])
+  @@map("audit_logs")
+}
+
+model SystemErrorLog {
+  id          String   @id @default(uuid())
+  guildId     String?
+  errorCode   String   @unique // ERR-2026-0816-0001
+  action      String
+  message     String
+  stack       String?
+  context     String?  // Detalhes JSON do contexto
+  createdAt   DateTime @default(now())
+
+  @@map("system_error_logs")
+}
+
+// ==========================================
+// 16. WORKFLOWS DE APROVAÇÃO MULTI-ETAPAS
+// ==========================================
+
+model ApprovalWorkflow {
+  id          String           @id @default(uuid())
+  guildId     String
+  guild       Guild            @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  name        String           // Ex: Promoção de Oficiais, Exoneração
+  actionType  String           // PROMOTION, DEMOTION, DISMISSAL, TRANSFER, SANCTION, MEDAL
+  description String?
+  isActive    Boolean          @default(true)
+  steps       ApprovalStep[]
+  requests    ApprovalRequest[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([guildId, actionType])
+  @@map("approval_workflows")
+}
+
+model ApprovalStep {
+  id                 String           @id @default(uuid())
+  workflowId         String
+  workflow           ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  stepOrder          Int              // 1, 2, 3...
+  roleId             String?          // Discord Role ID
+  roleName           String           // Ex: RH, Comando Geral, Corregedoria
+  permissionRequired String?          // Permissão necessária
+  allowDirectApproval Boolean         @default(false)
+  createdAt          DateTime         @default(now())
+
+  @@unique([workflowId, stepOrder])
+  @@map("approval_steps")
+}
+
+model ApprovalRequest {
+  id               String           @id @default(uuid())
+  guildId          String
+  guild            Guild            @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  workflowId       String
+  workflow         ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  protocol         String           @unique // APR-2026-000001
+  actionType       String           // PROMOTION, DEMOTION, DISMISSAL, TRANSFER, SANCTION, MEDAL
+  requesterId      String           // Discord ID de quem abriu
+  targetId         String           // Policial/Entidade alvo
+  currentStepOrder Int              @default(1)
+  totalSteps       Int
+  status           ApprovalStatus   @default(PENDENTE)
+  payload          String           // JSON com os dados da operação
+  reason           String
+  correctionNotes  String?
+  executedAt       DateTime?
+  actions          ApprovalAction[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([guildId, status])
+  @@map("approval_requests")
+}
+
+model ApprovalAction {
+  id         String             @id @default(uuid())
+  requestId  String
+  request    ApprovalRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actorId    String             // Discord ID de quem aprovou/rejeitou
+  actorName  String
+  actorRole  String?
+  stepOrder  Int
+  actionType ApprovalActionType // APROVAR, REJEITAR, SOLICITAR_CORRECAO, CANCELAR
+  comment    String?
+  createdAt  DateTime           @default(now())
+
+  @@map("approval_actions")
+}
+
+// ==========================================
+// 17. DOCUMENTOS & ASSINATURAS INSTITUCIONAIS
+// ==========================================
+
+model Document {
+  id              String              @id @default(uuid())
+  guildId         String
+  guild           Guild               @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  protocol        String              @unique // DOC-2026-000001
+  title           String
+  type            DocumentType
+  content         String              // Texto estruturado ou HTML/Markdown
+  metadata        String?             // JSON com parâmetros específicos
+  authorId        String              // Discord ID
+  authorName      String
+  authorRank      String?
+  institutionName String              @default("Segurança Pública")
+  logoUrl         String?
+  signatures      DocumentSignature[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([guildId, type])
+  @@map("documents")
+}
+
+model DocumentSignature {
+  id            String   @id @default(uuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  identifier    String   @unique // SIG-2026-000001
+  signerId      String   // Discord ID
+  signerName    String
+  signerRank    String?
+  signerRole    String?
+  signatureHash String   // Hash SHA-256 de validação
+  signedAt      DateTime @default(now())
+
+  @@map("document_signatures")
+}
+
+// ==========================================
+// 18. ANEXOS & PROVAS
+// ==========================================
+
+model EvidenceAttachment {
+  id          String   @id @default(uuid())
+  guildId     String
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  protocol    String   @unique // EV-2026-000001
+  entityType  String   // OCCURRENCE, ARREST, SEIZURE, IPM, PDO, OPERATION
+  entityId    String   // Protocolo ou ID da entidade
+  fileName    String
+  fileUrl     String
+  fileType    String?  // image/png, video/mp4, application/pdf, link
+  fileSize    Int?     // bytes
+  description String?
+  uploaderId  String   // Discord ID
+  isEvidence  Boolean  @default(true)
+  deletedAt   DateTime?
+  deletedBy   String?
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, entityType, entityId])
+  @@map("evidence_attachments")
+}
+
+// ==========================================
+// 19. ESCALAS DE SERVIÇO (SHIFTS)
+// ==========================================
+
+model Shift {
+  id           String        @id @default(uuid())
+  guildId      String
+  guild        Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  protocol     String        @unique // ESC-2026-000001
+  unitName     String
+  supervisorId String        // Discord ID
+  date         DateTime
+  shiftName    String        // Manhã, Tarde, Noite, 24h, 12x36
+  startTime    String        // "07:00"
+  endTime      String        // "19:00"
+  notes        String?
+  members      ShiftMember[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([guildId, date])
+  @@map("shifts")
+}
+
+model ShiftMember {
+  id            String      @id @default(uuid())
+  shiftId       String
+  shift         Shift       @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  userId        String      // Discord ID
+  userName      String
+  rankName      String?
+  status        ShiftStatus @default(PROGRAMADO)
+  justification String?
+  confirmedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([shiftId, userId])
+  @@map("shift_members")
+}
+
+// ==========================================
+// 20. CENTRAL DE ALERTAS & PRAZOS PROCESSUAIS
+// ==========================================
+
+model SystemAlert {
+  id           String        @id @default(uuid())
+  guildId      String
+  guild        Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  protocol     String        @unique // ALR-2026-000001
+  category     AlertCategory
+  title        String
+  message      String
+  status       AlertStatus   @default(NOVO)
+  entityType   String?
+  entityId     String?
+  assignedToId String?       // Discord ID
+  resolvedById String?       // Discord ID
+  resolvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([guildId, status])
+  @@map("system_alerts")
+}
+
+model DeadlineRecord {
+  id            String         @id @default(uuid())
+  guildId       String
+  guild         Guild          @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  protocol      String         @unique // DL-2026-000001
+  entityType    String         // IPM, PDO, SUMMONS, ABSENCE, DEPOSITO
+  entityId      String         // ID ou Protocolo
+  title         String
+  responsibleId String         // Discord ID do encarregado
+  startDate     DateTime       @default(now())
+  dueDate       DateTime
+  daysRemaining Int            @default(0)
+  status        DeadlineStatus @default(NORMAL)
+  notifiedAt    DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([guildId, status])
+  @@map("deadline_records")
+}
+
+// ==========================================
+// 21. SISTEMA DE METAS INSTITUCIONAIS
+// ==========================================
+
+model SystemGoal {
+  id           String    @id @default(uuid())
+  guildId      String
+  guild        Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  title        String    // Ex: 500h de Patrulhamento Comunitário
+  category     String    // PATRULHAMENTO, INSTRUCAO, PRESENCA, FORMACAO
+  targetValue  Float
+  currentValue Float     @default(0)
+  unit         String    // Horas, Alunos, Sessões
+  period       String    // MENSAL, TRIMESTRAL, ANUAL
+  startDate    DateTime
+  endDate      DateTime
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("system_goals")
+}
+
+// ==========================================
+// 22. VERSIONAMENTO DE REGISTROS & CONFIGURAÇÕES
+// ==========================================
+
+model RecordVersion {
+  id           String   @id @default(uuid())
+  guildId      String
+  guild        Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  entityType   String   // OCCURRENCE, CASE, SANCTION, PROFILE
+  entityId     String
+  versionNumber Int
+  changedById  String   // Discord ID
+  changeReason String?
+  previousData String   // JSON
+  newData      String   // JSON
+  createdAt    DateTime @default(now())
+
+  @@index([guildId, entityType, entityId])
+  @@map("record_versions")
+}
+
+model ConfigurationHistory {
+  id          String   @id @default(uuid())
+  guildId     String
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  category    String   // ROLES, CHANNELS, HIERARCHY, WORKFLOW, SECURITY
+  parameter   String
+  oldValue    String?
+  newValue    String?
+  changedById String   // Discord ID
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, category])
+  @@map("configuration_history")
+}
+
+// ==========================================
+// 23. SEGURANÇA, BLACKLIST, PERMISSÕES TEMPORÁRIAS E BACKUPS (FASE 9)
+// ==========================================
+
+model BlacklistRecord {
+  id            String          @id @default(uuid())
+  guildId       String
+  guild         Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  userId        String          // Discord ID
+  userName      String?
+  status        BlacklistStatus @default(BLOQUEADO)
+  reason        String
+  addedById     String          // Discord ID
+  removedById   String?
+  removedReason String?
+  expiresAt     DateTime?
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([guildId, userId])
+  @@index([guildId, isActive])
+  @@map("blacklist_records")
+}
+
+model TemporaryPermission {
+  id          String   @id @default(uuid())
+  guildId     String
+  guild       Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  userId      String   // Discord ID
+  permission  String   // Ex: RH.PROMOVER, ADMIN.AUDITORIA
+  grantedById String   // Discord ID
+  reason      String
+  startsAt    DateTime @default(now())
+  expiresAt   DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, userId, isActive])
+  @@map("temporary_permissions")
+}
+
+model TemporarySubstitution {
+  id           String   @id @default(uuid())
+  guildId      String
+  guild        Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  titularId    String   // Discord ID do titular afastado
+  substituteId String   // Discord ID do policial substituto
+  roleName     String   // Cargo exercido (ex: Chefe do RH, Comandante do COPOM)
+  permissions  String   // Lista de permissões em CSV ou JSON
+  grantedById  String   // Discord ID da autoridade designante
+  reason       String
+  startsAt     DateTime @default(now())
+  expiresAt    DateTime
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([guildId, substituteId, isActive])
+  @@map("temporary_substitutions")
+}
+
+model BackupLog {
+  id            String   @id @default(uuid())
+  guildId       String?
+  fileName      String
+  fileSizeBytes Int
+  status        String   // SUCESSO, FALHA, RESTAURADO
+  backupType    String   // COMPLETO, INCREMENTAL, MANUAL
+  hashIntegrity String?
+  details       String?
+  createdAt     DateTime @default(now())
+
+  @@map("backup_logs")
+}
+
+model SecurityIncident {
+  id           String           @id @default(uuid())
+  guildId      String
+  guild        Guild            @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  protocol     String           @unique // INC-2026-000001
+  type         String           // ACESSO_NEGADO, CONFLITO_INTERESSE, ACAO_EM_MASSA, MANUTENCAO_VIOLADA
+  severity     IncidentSeverity @default(MEDIA)
+  actorId      String           // Discord ID
+  description  String
+  details      String?          // JSON
+  status       IncidentStatus   @default(ABERTO)
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([guildId, severity, status])
+  @@map("security_incidents")
+}

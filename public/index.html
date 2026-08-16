@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Central de Segurança Pública • Dashboard Institucional</title>
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- BARRA LATERAL (SIDEBAR) -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-badge">🏛️ SSP</div>
+        <div class="institution-meta">
+          <h2>Segurança Pública</h2>
+          <span>Painel Estratégico</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="overview">
+          <span class="nav-icon">📊</span> Visão Geral
+        </button>
+        <button class="nav-item" data-tab="rh">
+          <span class="nav-icon">👥</span> Efetivo & RH
+        </button>
+        <button class="nav-item" data-tab="copom">
+          <span class="nav-icon">🚔</span> COPOM & Frota
+        </button>
+        <button class="nav-item" data-tab="corregedoria">
+          <span class="nav-icon">⚖️</span> Corregedoria
+        </button>
+        <button class="nav-item" data-tab="academia">
+          <span class="nav-icon">🎓</span> Academia
+        </button>
+        <button class="nav-item" data-tab="documents">
+          <span class="nav-icon">📜</span> Documentos
+        </button>
+        <button class="nav-item" data-tab="security">
+          <span class="nav-icon">🛡️</span> Auditoria & Defesa
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="system-health-pill">
+          <span class="pulse-dot"></span>
+          <span id="gateway-status">Sistema Online</span>
+        </div>
+        <span class="version-label">v1.4.2 ERP</span>
+      </div>
+    </aside>
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="main-content">
+      <!-- CABEÇALHO SUPERIOR -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 id="page-title">Painel Executivo • Comando Geral</h1>
+          <p id="page-subtitle">Métricas consolidadas e telemetria operacional em tempo real</p>
+        </div>
+        <div class="topbar-right">
+          <div class="live-clock" id="live-clock">--:--:--</div>
+          <button class="btn-primary" id="btn-refresh">🔄 Atualizar Dados</button>
+        </div>
+      </header>
+
+      <!-- ABA 1: VISÃO GERAL (COMANDO GERAL) -->
+      <section class="tab-pane active" id="tab-overview">
+        <div class="kpi-grid">
+          <div class="kpi-card glass">
+            <div class="kpi-icon">👥</div>
+            <div class="kpi-content">
+              <span class="kpi-label">Efetivo Ativo</span>
+              <h3 class="kpi-value" id="kpi-efetivo-ativos">0</h3>
+              <span class="kpi-sub" id="kpi-efetivo-servico">0 em serviço ativo</span>
+            </div>
+          </div>
+
+          <div class="kpi-card glass">
+            <div class="kpi-icon">🚓</div>
+            <div class="kpi-content">
+              <span class="kpi-label">Viaturas Operacionais</span>
+              <h3 class="kpi-value" id="kpi-vtrs-ativas">0</h3>
+              <span class="kpi-sub" id="kpi-patrulhas">0 patrulhas ativas</span>
+            </div>
+          </div>
+
+          <div class="kpi-card glass">
+            <div class="kpi-icon">⚖️</div>
+            <div class="kpi-content">
+              <span class="kpi-label">Processos Disciplinares</span>
+              <h3 class="kpi-value" id="kpi-ipms">0</h3>
+              <span class="kpi-sub" id="kpi-convocacoes">0 convocações</span>
+            </div>
+          </div>
+
+          <div class="kpi-card glass">
+            <div class="kpi-icon">🎓</div>
+            <div class="kpi-content">
+              <span class="kpi-label">Formação & Ensino</span>
+              <h3 class="kpi-value" id="kpi-cursos">0</h3>
+              <span class="kpi-sub" id="kpi-alunos">0 alunos matriculados</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="two-column-grid">
+          <div class="panel glass">
+            <div class="panel-header">
+              <h3>🔔 Notificações e Alertas Recentes</h3>
+            </div>
+            <div class="panel-body" id="overview-alerts-list">
+              <p class="empty-state">Carregando alertas...</p>
+            </div>
+          </div>
+
+          <div class="panel glass">
+            <div class="panel-header">
+              <h3>⚖️ Prazos Processuais em Acompanhamento</h3>
+            </div>
+            <div class="panel-body" id="overview-deadlines-list">
+              <p class="empty-state">Carregando prazos...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 2: RECURSOS HUMANOS -->
+      <section class="tab-pane" id="tab-rh">
+        <div class="panel glass">
+          <div class="panel-header flex-between">
+            <div class="search-bar">
+              <input type="text" id="input-search-police" placeholder="Buscar por nome, guerra ou matrícula...">
+            </div>
+            <div class="filters">
+              <select id="select-status-filter">
+                <option value="">Todos os Status</option>
+                <option value="ATIVO">Ativo</option>
+                <option value="AFASTADO">Afastado</option>
+                <option value="FERIAS">Férias</option>
+                <option value="SUSPENSO">Suspenso</option>
+                <option value="EXONERADO">Exonerado</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="panel-body table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Matrícula</th>
+                  <th>Nome de Guerra</th>
+                  <th>Nome Completo</th>
+                  <th>Patente</th>
+                  <th>Unidade</th>
+                  <th>Horas Serv.</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="police-table-body">
+                <tr><td colspan="8" class="empty-state">Carregando quadro de policiais...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 3: COPOM -->
+      <section class="tab-pane" id="tab-copom">
+        <div class="two-column-grid">
+          <div class="panel glass">
+            <div class="panel-header">
+              <h3>🚓 Frota de Viaturas e Status</h3>
+            </div>
+            <div class="panel-body table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Prefixo</th>
+                    <th>Modelo</th>
+                    <th>Placa</th>
+                    <th>Unidade</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="fleet-table-body">
+                  <tr><td colspan="5" class="empty-state">Carregando frota...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel glass">
+            <div class="panel-header">
+              <h3>🚨 Ocorrências Policiais Recentes</h3>
+            </div>
+            <div class="panel-body" id="occurrences-list">
+              <p class="empty-state">Carregando ocorrências...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 4: CORREGEDORIA -->
+      <section class="tab-pane" id="tab-corregedoria">
+        <div class="panel glass">
+          <div class="panel-header">
+            <h3>⚖️ Inquéritos e Processos Disciplinares (IPM / PDO)</h3>
+          </div>
+          <div class="panel-body table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Protocolo</th>
+                  <th>Tipo</th>
+                  <th>Investigado</th>
+                  <th>Encarregado</th>
+                  <th>Data Abertura</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="cases-table-body">
+                <tr><td colspan="6" class="empty-state">Carregando processos...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 5: ACADEMIA -->
+      <section class="tab-pane" id="tab-academia">
+        <div class="panel glass">
+          <div class="panel-header">
+            <h3>🎓 Cursos e Turmas da Academia Militar</h3>
+          </div>
+          <div class="panel-body" id="courses-grid">
+            <p class="empty-state">Carregando cursos...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 6: DOCUMENTOS -->
+      <section class="tab-pane" id="tab-documents">
+        <div class="panel glass">
+          <div class="panel-header flex-between">
+            <h3>📜 Validação Pública de Assinaturas Digitais</h3>
+            <div class="validate-box">
+              <input type="text" id="input-verify-code" placeholder="Ex: SIG-2026-000245">
+              <button class="btn-primary" id="btn-verify-sig">Verificar Autenticidade</button>
+            </div>
+          </div>
+          <div class="panel-body" id="verification-result-box" style="display: none;"></div>
+          <div class="panel-body table-responsive">
+            <h4 style="margin-bottom: 12px; color: var(--text-muted);">Documentos Oficiais Emitidos Recentemente</h4>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Protocolo</th>
+                  <th>Título</th>
+                  <th>Tipo</th>
+                  <th>Autor</th>
+                  <th>Data</th>
+                </tr>
+              </thead>
+              <tbody id="docs-table-body">
+                <tr><td colspan="5" class="empty-state">Carregando documentos...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 7: SEGURANÇA & AUDITORIA -->
+      <section class="tab-pane" id="tab-security">
+        <div class="panel glass">
+          <div class="panel-header flex-between">
+            <h3>🛡️ Central de Auditoria Administrativa Imutável</h3>
+            <button class="btn-primary" id="btn-trigger-backup">💾 Fazer Backup Imediato</button>
+          </div>
+          <div class="panel-body table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Protocolo</th>
+                  <th>Data/Hora</th>
+                  <th>Executor</th>
+                  <th>Módulo</th>
+                  <th>Ação</th>
+                  <th>Motivo</th>
+                </tr>
+              </thead>
+              <tbody id="audit-table-body">
+                <tr><td colspan="6" class="empty-state">Carregando logs de auditoria...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL DE LINHA DO TEMPO FUNCIONAL -->
+  <div class="modal-overlay" id="timeline-modal">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h3 id="timeline-modal-title">Linha do Tempo Funcional</h3>
+        <button class="btn-close" id="btn-close-timeline">&times;</button>
+      </div>
+      <div class="modal-body" id="timeline-modal-body">
+        <p class="empty-state">Carregando histórico...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>

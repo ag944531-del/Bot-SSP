@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # BOT SSP (APLICAÇÃO PRINCIPAL)
+  # ==========================================
+  bot-ssp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bot_ssp_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - CLIENT_ID=${CLIENT_ID}
+      - GUILD_ID=${GUILD_ID}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ssp_admin}:${POSTGRES_PASSWORD:-ssp_secret_password}@postgres:5432/${POSTGRES_DB:-ssp_database}?schema=public
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - bot_logs:/app/logs
+      - bot_backups:/app/backups
+    networks:
+      - ssp_network
+
+  # ==========================================
+  # BANCO DE DADOS POSTGRESQL
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: bot_ssp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ssp_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ssp_secret_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ssp_database}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ssp_admin} -d ${POSTGRES_DB:-ssp_database}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ssp_network
+
+  # ==========================================
+  # REDIS (CACHE & FILAS OPCIONAIS)
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: bot_ssp_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ssp_network
+
+networks:
+  ssp_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  bot_logs:
+  bot_backups:
